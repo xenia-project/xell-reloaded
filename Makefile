@@ -36,9 +36,7 @@ clean:
 	@$(MAKE) --no-print-directory -f Makefile_lv2.mk clean
 	@rm -rf $(OBJS) $(foreach name,$(TARGETS),$(addprefix $(name).,bin elf)) stage2.elf32.gz
 	
-dist: 	
-	clean
-	all
+dist: clean all
  	@mkdir -p xell-$(GITREV)/_DEBUG
  	@cp *.bin xell-$(GITREV)/
  	@gunzip *.gz
