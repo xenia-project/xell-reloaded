@@ -36,6 +36,11 @@ volatile long wakeup_cpus = 1;
 
 void jump(unsigned long dtc, unsigned long kernel_base, unsigned long null, unsigned long reladdr, unsigned long hrmor);
 
+void __stack_chk_fail(void)
+{
+	// Important function. Does nothing.
+}
+
 static inline uint64_t ld(volatile void *addr)
 {
 	uint64_t l;
@@ -317,15 +322,16 @@ int start(int pir, unsigned long hrmor, unsigned long pvr)
 
 		// place startup code
 
-			// reset exception (odd threads startup)
+		// reset exception (odd threads startup)
+		// N.B: When the even threads start, they will disable OCR startup and enable odd threads.
 		place_jump((void*)0x8000000000000100, other_threads_startup);
 
-			// copy startup code to on-chip RAM (even threads startup)
+		// copy startup code to on-chip RAM (even threads startup)
+		// N.B: We copy the code here because even threads have HID1.DIS_SYSRST_REG = 0
 		memcpy((void*)OCR_LAND_ADDR, other_threads_startup, other_threads_startup_end - other_threads_startup);
 		flush_code ((void*)OCR_LAND_ADDR, other_threads_startup_end - other_threads_startup);
 
 		// setup 1BL secondary hold addresses
-
 		void *sec_hold_addrs = (void*)0x800002000001ff80;
 
 		std(sec_hold_addrs + 0x68, OCR_LAND_MAGIC);
@@ -346,6 +352,7 @@ int start(int pir, unsigned long hrmor, unsigned long pvr)
 
 		std(irq_cntrl + 0x10, 0x140078);
 
+		// Enable the secondary thread on the primary core.
 		mtspr(152, 0xc00000);  // CTRL.TE{0,1} = 11
 
 		while (get_online_processors() != 0x3f)

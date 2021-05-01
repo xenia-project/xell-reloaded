@@ -3,7 +3,7 @@
 .globl _start
 _start:
 
-b	start_from_rom
+b	start_from_rom  // The CD loader will jump to this address.
 b	start_from_libxenon
 b	.	// for future use
 b	.
@@ -23,11 +23,11 @@ start_from_rom:
 
 	li	%r3, 2
 	isync
-	mtspr	lpcr, %r3
+	mtspr	lpcr, %r3            // LPCR[RMI] = 1 (Real-Mode cache inhibited)
 	isync
 	li      %r3, 0x3FF
 	rldicr  %r3, %r3, 32,31
-	tlbiel	%r3,1
+	tlbiel	%r3,1                // TLB invalidate (local) 0x000003FF_00000000
 	sync
 	isync
 
@@ -41,7 +41,7 @@ start_from_rom:
 	isync
 
 	mfspr	%r10, lpcr
-	li	%r11, 1
+	li	    %r11, 1
 	rldimi	%r10, %r11, 1,62
 	isync
 	mtspr	lpcr, %r10
@@ -51,11 +51,11 @@ start_from_rom:
 	li	%sp, 0
 	oris	%sp, %sp, 0x8000
 	rldicr	%sp, %sp, 32,31
-	oris	%sp, %sp, 0x1e00
+	oris	%sp, %sp, 0x1e00     // R1 = 0x80000000_1E000000
 
 	mfspr	%r3, pir
-	slwi	%r4, %r3, 16  // 64k stack
-	sub	%sp, %sp, %r4
+	slwi	%r4, %r3, 16  		 // 64k stack per thread
+	sub		%sp, %sp, %r4
 	subi	%sp, %sp, 0x80
 
 	cmpwi	%r3, 0
@@ -138,6 +138,8 @@ other_threads_startup:
 	sync
 	isync
 
+	// 0x00C00000
+	// TE = 0b11 (enable both threads)
 	lis	%r3,0xC0
 	mtspr	ctrlwr,%r3
 	sync
@@ -158,17 +160,29 @@ other_threads_startup:
 init_regs:
 	or	%r2, %r2, %r2 // normal priority
 
+	// Set up the HID (Hardware Implementation Dependent) registers.
+	// Refer to Cell Broadband Engine Registers, v1.5
+
+	// HID0: Implementation differs per CPU, but some bits are reused.
+	// On the Cell Broadband Engine, this just inhibits things we probably don't want.
 	li	%r3, 0
 	mtspr	hid0, %r3
 	sync
 	isync
 
+	// As per the Cell Broadband Engine Hardware Initialization Guide.
+	// Enable the L1 data cache.
+	// 0x00003F0000000000
 	li	%r3, 0x3f00
 	rldicr	%r3, %r3, 32,31
 	mtspr	hid4, %r3
 	sync
 	isync
 
+	// As per Cell Broadband Engine Hardware Initialization Guide.
+	// Enable the L1 instruction cache, and make 0x100 the reset vector for thread 0.
+	// DIS_SYSRST_REG = 1 (Disable config ring system reset vector)
+	// 0x9C30104000000000
 	lis	%r3, 0x9c30
 	ori	%r3,%r3, 0x1040
 	rldicr	%r3, %r3, 32,31
@@ -176,6 +190,11 @@ init_regs:
 	sync
 	isync
 
+	// Initialize RMSC to set the real mode address boundary to 2TB.
+	// RMSC = 0b1110b
+	// LB   = 0b1000 (64KB / 16MB large page table size)
+	// TB   = 0b1 (Time base enabled)
+	// 0x0001803800000000
 	lis	%r3, 1
 	ori	%r3,%r3, 0x8038
 	rldicr	%r3, %r3, 32,31
@@ -183,11 +202,19 @@ init_regs:
 	sync
 	isync
 
+	// Thread Switch Control Register (tscr)
+	// WEXT = 1
+	// PBUMP = 1 (boost thread priority level to medium when interrupt pending)
+	// FPCF = 1
+	// PSCTP = 1 (privileged can change priority)
+	// 0x001D0000
 	lis	%r3, 0x1d
 	mtspr	tscr, %r3
 	sync
 	isync
 
+	// Thread Switch Timeout Register
+	// TTM = 0x1000 (thread interrupted after executing 4096 instructions)
 	li	%r3, 0x1000
 	mtspr	ttr, %r3
 	sync
